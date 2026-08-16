@@ -169,6 +169,13 @@ type PairStartResult struct {
 	ApproveURL string `json:"approve_url"`
 }
 
+// LocalRegister tells the account where this agent is reachable on loopback, so
+// the vault page can play a track off this machine instead of the network.
+func (c *Client) LocalRegister(ctx context.Context, url, token string) error {
+	return c.do(ctx, http.MethodPost, "/api/agent/local",
+		map[string]string{"url": url, "token": token}, nil)
+}
+
 func (c *Client) PairStart(ctx context.Context, deviceName, platform string) (*PairStartResult, error) {
 	var out PairStartResult
 	err := c.do(ctx, http.MethodPost, "/api/agent/pair/start", map[string]string{

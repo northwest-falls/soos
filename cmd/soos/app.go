@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"github.com/northwest-falls/soos/internal/api"
 	"github.com/northwest-falls/soos/internal/browser"
 	"github.com/northwest-falls/soos/internal/config"
+	"github.com/northwest-falls/soos/internal/index"
 	"github.com/northwest-falls/soos/internal/single"
 	"github.com/northwest-falls/soos/internal/ui"
 	"github.com/northwest-falls/soos/internal/webui"
@@ -38,16 +41,61 @@ func runApp() error {
 	defer cancel()
 	defer clearUIAddr()
 
-	host := &uiHost{}
+	// A separate token from the one the settings page uses. The vault is handed
+	// this one and only this one, so it can play a file off disk without being
+	// able to touch anything else the server does.
+	localToken := randomToken()
 
-	// The page is opened for setup and the occasional look, not kept up. So the
-	// server starts when it is wanted and closes its socket when it has been
-	// idle a while, and the steady state of the tray is a process that only
-	// watches a folder and uploads, with nothing listening. That is a plainer
-	// thing for a scanner to look at.
-	if !isPaired() || !watching() {
-		host.open(ctx)
+	var mu sync.Mutex
+	var pageURL string
+	setURL := func(u string) { mu.Lock(); pageURL = u; mu.Unlock() }
+	getURL := func() string { mu.Lock(); defer mu.Unlock(); return pageURL }
+
+	ready := make(chan string, 1)
+
+	// The server stays up for as long as Soos runs, so the vault can reach the
+	// local playback bridge whenever it is open, not only while the settings
+	// page happens to be. That is the socket the on-demand server used to close;
+	// it is narrow, loopback, and serves only audio the account already holds.
+	go func() {
+		err := webui.Serve(ctx, webui.Deps{
+			Version:    version,
+			Paired:     isPaired,
+			StartPair:  startPair,
+			LocalToken: localToken,
+			FindLocal:  findLocalFile,
+		}, func(u string) error {
+			setURL(u)
+			writeUIAddr(u)
+			select {
+			case ready <- u:
+			default:
+			}
+			return nil
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "soos:", err)
+		}
+	}()
+
+	open := func() {
+		if u := getURL(); u != "" {
+			_ = browser.Open(u)
+		}
 	}
+
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+	}
+
+	// Nothing to do until somebody has paired and named a folder, and sitting
+	// silently in the tray on a fresh install reads as not working.
+	if !isPaired() || !watching() {
+		open()
+	}
+
+	go registerLoop(ctx, localToken, getURL)
 
 	go func() {
 		for ctx.Err() == nil {
@@ -72,68 +120,95 @@ func runApp() error {
 
 	ui.Run(ui.Options{
 		Tooltip: "Soos",
-		OnOpen:  func() { host.open(ctx) },
+		OnOpen:  open,
 		OnQuit:  requestStop,
 	})
 
 	return nil
 }
 
-// uiHost runs the interface only while it is wanted. The first request starts
-// it, idleness stops it, and asking again starts it back up.
-type uiHost struct {
-	mu  sync.Mutex
-	url string
-}
+// registerLoop keeps the account pointed at this agent's loopback address while
+// it runs, renewing before the short server-side TTL lapses so a closed laptop
+// drops off on its own.
+func registerLoop(ctx context.Context, token string, getURL func() string) {
+	wait := 2 * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait = 90 * time.Second
 
-func (h *uiHost) open(parent context.Context) {
-	h.mu.Lock()
-	if h.url != "" {
-		u := h.url
-		h.mu.Unlock()
-		_ = browser.Open(u)
-		return
-	}
-
-	ctx, cancel := context.WithCancel(parent)
-	ready := make(chan string, 1)
-	h.mu.Unlock()
-
-	go func() {
-		err := webui.Serve(ctx, webui.Deps{
-			Version:      version,
-			Paired:       isPaired,
-			StartPair:    startPair,
-			IdleShutdown: 10 * time.Minute,
-		}, func(u string) error {
-			h.mu.Lock()
-			h.url = u
-			h.mu.Unlock()
-			writeUIAddr(u)
-			select {
-			case ready <- u:
-			default:
-			}
-			return nil
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "soos:", err)
+		if !isPaired() {
+			continue
+		}
+		u := getURL()
+		if u == "" {
+			continue
 		}
 
-		// Stopped, whether idle or shutting down. Forget the address so the next
-		// open starts a fresh one rather than pointing at a dead port.
-		h.mu.Lock()
-		h.url = ""
-		h.mu.Unlock()
-		clearUIAddr()
-		cancel()
-	}()
-
-	select {
-	case u := <-ready:
-		_ = browser.Open(u)
-	case <-time.After(3 * time.Second):
+		c, _, err := client()
+		if err != nil || c.Token == "" {
+			continue
+		}
+		_ = c.LocalRegister(ctx, baseURLOf(u), token)
 	}
+}
+
+// findLocalFile answers whether this machine still holds the file for a content
+// hash, and where. The index is opened fresh each time rather than shared with
+// the uploader: a playback lookup is rare, and a stale open cannot corrupt the
+// live one. The size and time are checked so a file changed since it was hashed
+// is not served as if it were the version the vault knows.
+func findLocalFile(hash string) (string, bool) {
+	if hash == "" {
+		return "", false
+	}
+
+	idxPath, err := config.IndexPath()
+	if err != nil {
+		return "", false
+	}
+
+	ix, _, err := index.Open(idxPath)
+	if err != nil {
+		return "", false
+	}
+
+	for _, p := range ix.KnownAt(hash) {
+		st, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if e, ok := ix.Lookup(p, st.Size(), st.ModTime()); ok && e.Hash == hash {
+			return p, true
+		}
+	}
+
+	return "", false
+}
+
+func randomToken() string {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
+}
+
+// baseURLOf drops the path and query, leaving http://host. The registered
+// address carries no token: the vault gets that separately.
+func baseURLOf(u string) string {
+	const p = "http://"
+	if !strings.HasPrefix(u, p) {
+		return u
+	}
+	rest := u[len(p):]
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		return p + rest[:i]
+	}
+	return u
 }
 
 // The page on its own, for anyone who would rather not have a tray icon.

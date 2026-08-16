@@ -37,6 +37,13 @@ type Deps struct {
 	// the shape of a backdoor, and there is no reason to be that shape when
 	// nobody is looking at the page.
 	IdleShutdown time.Duration
+
+	// The local playback bridge. LocalToken gates /local, handed only to the
+	// vault through the account so no other page can reach it. FindLocal returns
+	// the path of a file this machine holds for a content hash, if it is still
+	// the same file, so the vault can play it off disk.
+	LocalToken string
+	FindLocal  func(hash string) (string, bool)
 }
 
 type server struct {
@@ -80,6 +87,12 @@ func Serve(ctx context.Context, deps Deps, open func(string) error) error {
 	mux.HandleFunc("/api/folders/remove", s.guard(s.handleRemove))
 	mux.HandleFunc("/api/folders/options", s.guard(s.handleOptions))
 	mux.HandleFunc("/api/pair", s.guard(s.handlePair))
+
+	// The local playback bridge. Its own token and its own CORS, kept apart from
+	// the settings API so the vault can play a file without being able to touch
+	// anything else.
+	mux.HandleFunc("/local/have", s.handleLocalHave)
+	mux.HandleFunc("/local/audio", s.handleLocalAudio)
 
 	srv := &http.Server{
 		Handler:           mux,
@@ -339,6 +352,124 @@ func (s *server) handlePair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	send(w, map[string]any{"code": code, "url": url})
+}
+
+// The vault is the only page allowed to reach the bridge. A media element does
+// not always send Origin, so the token is the real gate; the origin is an extra
+// wall for the fetch that asks whether a file is here.
+var localOrigins = map[string]bool{
+	"https://me.northwestfalls.com":     true,
+	"https://me-dev.northwestfalls.com": true,
+	"https://northwestfalls.com":        true,
+}
+
+func (s *server) localCORS(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if localOrigins[origin] {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		// A page on the public internet reaching a private address is gated by
+		// Private Network Access, which asks this of the target before it will
+		// let the request through. We are that target, and we are willing.
+		w.Header().Set("Access-Control-Allow-Private-Network", "true")
+		w.Header().Set("Vary", "Origin")
+	}
+}
+
+// preflight answers the CORS and Private Network Access check the browser sends
+// ahead of the real request. True means it was handled and nothing else should.
+func (s *server) preflight(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodOptions {
+		return false
+	}
+	s.localCORS(w, r)
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	w.Header().Set("Access-Control-Max-Age", "600")
+	w.WriteHeader(http.StatusNoContent)
+	return true
+}
+
+func (s *server) localAuthed(r *http.Request) bool {
+	if s.deps.LocalToken == "" {
+		return false
+	}
+	given := r.URL.Query().Get("token")
+	return subtle.ConstantTimeCompare([]byte(given), []byte(s.deps.LocalToken)) == 1
+}
+
+func (s *server) handleLocalHave(w http.ResponseWriter, r *http.Request) {
+	if s.preflight(w, r) {
+		return
+	}
+	s.localCORS(w, r)
+	w.Header().Set("Cache-Control", "no-store")
+
+	if !s.localAuthed(r) {
+		http.Error(w, "no", http.StatusForbidden)
+		return
+	}
+
+	have := false
+	if s.deps.FindLocal != nil {
+		if _, ok := s.deps.FindLocal(cleanHash(r.URL.Query().Get("hash"))); ok {
+			have = true
+		}
+	}
+
+	send(w, map[string]any{"have": have})
+}
+
+func (s *server) handleLocalAudio(w http.ResponseWriter, r *http.Request) {
+	if s.preflight(w, r) {
+		return
+	}
+	s.localCORS(w, r)
+
+	if !s.localAuthed(r) || s.deps.FindLocal == nil {
+		http.Error(w, "no", http.StatusForbidden)
+		return
+	}
+
+	path, ok := s.deps.FindLocal(cleanHash(r.URL.Query().Get("hash")))
+	if !ok {
+		http.Error(w, "not here", http.StatusNotFound)
+		return
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		http.Error(w, "not here", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		http.Error(w, "not here", http.StatusNotFound)
+		return
+	}
+
+	// ServeContent does the Range handling, so a seek is a slice rather than the
+	// whole file. The name only sets the content type from its extension.
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), f)
+}
+
+// A content hash is 64 lowercase hex characters and nothing else. Anything that
+// is not gets no lookup rather than a sanitised guess.
+func cleanHash(h string) string {
+	h = strings.ToLower(strings.TrimSpace(h))
+	if len(h) != 64 {
+		return ""
+	}
+	for i := 0; i < len(h); i++ {
+		c := h[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return ""
+		}
+	}
+	return h
 }
 
 func send(w http.ResponseWriter, v any) {
