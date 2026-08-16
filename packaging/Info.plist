@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Soos.app/Contents/Info.plist
+
+  LSUIElement is the important one. It keeps Soos out of the Dock and out of
+  the app switcher, which is correct for something that lives beside the clock
+  and should never be a window somebody has to manage.
+
+  CFBundleIdentifier must match the keychain service in internal/config, or the
+  credential is written under one name and looked up under another.
+
+  Versions are rewritten by CI at build time. The values here are the floor.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>Soos</string>
+
+  <key>CFBundleDisplayName</key>
+  <string>Soos</string>
+
+  <key>CFBundleIdentifier</key>
+  <string>com.northwestfalls.soos</string>
+
+  <key>CFBundleExecutable</key>
+  <string>soos</string>
+
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+
+  <key>CFBundleVersion</key>
+  <string>0.1.0</string>
+
+  <key>CFBundleIconFile</key>
+  <string>icon.icns</string>
+
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2026 Northwest Falls. All rights reserved.</string>
+
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+
+  <!-- Menu bar only. No Dock icon, no app switcher entry. -->
+  <key>LSUIElement</key>
+  <true/>
+
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>

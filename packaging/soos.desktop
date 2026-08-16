@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=Soos
+GenericName=Music folder watcher
+Comment=Watches a folder and puts what lands there in your Northwest Falls vault
+Exec=soos tray
+Icon=soos
+Terminal=false
+Categories=Audio;AudioVideo;Utility;
+Keywords=music;backup;vault;sync;northwest falls;
+
+# Starts with the session. Somebody who installed a background watcher meant
+# for it to be watching, and being asked to launch it every morning is the
+# fastest way to make them stop using it.
+X-GNOME-Autostart-enabled=true
+
+# Menu bar only. There is no window to show, so nothing should try to raise one.
+NoDisplay=false
+StartupNotify=false

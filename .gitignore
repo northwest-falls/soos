@@ -1,0 +1,8 @@
+*.AppImage
+*.dmg
+*.exe
+*.syso
+.DS_Store
+build/
+dist/
+northwest-agent

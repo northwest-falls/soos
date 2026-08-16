@@ -1,0 +1,44 @@
+Copyright (c) 2026 Northwest Falls. All rights reserved.
+
+SOURCE-AVAILABLE LICENCE
+
+This source code is published so that anybody running this program can verify
+what it does with their files. That purpose is the whole reason it is readable,
+and this licence is written to serve it without also giving the code away.
+
+WHAT YOU MAY DO
+
+You may read this source code, in full, for any purpose.
+
+You may compile it and run your own build of it on machines you control,
+including to satisfy yourself that the published binaries match the source and
+that the program behaves as the documentation claims.
+
+You may quote from it, publish analysis of it, and report problems with it,
+including publicly and including unfavourably.
+
+WHAT YOU MAY NOT DO
+
+You may not redistribute this source code or binaries built from it, whether
+modified or unmodified, and whether or not for payment.
+
+You may not use this source code, in whole or in part, in any other product or
+service.
+
+You may not remove or alter this notice.
+
+NO WARRANTY
+
+This program is provided "as is", without warranty of any kind, express or
+implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and noninfringement. In no event shall the
+copyright holder be liable for any claim, damages or other liability, whether
+in an action of contract, tort or otherwise, arising from, out of or in
+connection with this program or the use or other dealings in it.
+
+---
+
+This is not an OSI-approved open source licence and is deliberately not
+described as one anywhere in this repository. Calling it open source when it
+forbids redistribution would be untrue, and this project does not have room for
+a claim that does not survive being checked.
