@@ -18,7 +18,6 @@ import (
 	"github.com/northwest-falls/soos/internal/index"
 	"github.com/northwest-falls/soos/internal/scan"
 	"github.com/northwest-falls/soos/internal/sync"
-	"github.com/northwest-falls/soos/internal/ui"
 	"github.com/northwest-falls/soos/internal/watch"
 )
 
@@ -33,6 +32,7 @@ const usage = `soos: watches a folder and puts what lands there in your vault.
   soos once            run one pass and exit
   soos run             keep running
   soos tray            keep running, with an icon in the tray
+  soos ui              open the folder settings in your browser
   soos install         put Soos in place and start him with your computer
   soos uninstall       take him back out
 
@@ -45,18 +45,20 @@ const usage = `soos: watches a folder and puts what lands there in your vault.
 `
 
 func main() {
-	// Explorer gives us a console of our own and takes it away the instant we
-	// return, so the command list is unreadable there. Somebody who arrived by
-	// double click gets set up instead of a flash of text.
+	// Whether a terminal already exists tells us how we were started. Soos is
+	// built for the GUI subsystem, so nothing to attach to means Explorer or
+	// setup, and the interface is the only sensible thing to show.
+	hasConsole := attachConsole()
+
 	if len(os.Args) < 2 {
-		if !ownsConsole() {
+		if hasConsole {
 			fmt.Print(usage)
 			os.Exit(2)
 		}
-		if err := cmdWelcome(); err != nil {
-			fmt.Fprintln(os.Stderr, "\n  soos:", err)
+		if err := runApp(); err != nil {
+			alert("Soos", err.Error())
+			os.Exit(1)
 		}
-		pause()
 		return
 	}
 
@@ -83,8 +85,10 @@ func main() {
 		err = cmdRun(false)
 	case "run":
 		err = cmdRun(true)
-	case "tray":
-		err = cmdTray()
+	case "tray", "app":
+		err = runApp()
+	case "ui":
+		err = cmdUI()
 	case "install":
 		err = cmdInstall()
 	case "uninstall":
@@ -104,22 +108,15 @@ func main() {
 			break
 		}
 		fmt.Print(usage)
-		if ownsConsole() {
-			pause()
-		}
 		os.Exit(2)
 	}
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "soos:", err)
-		if ownsConsole() {
-			pause()
+		if !hasConsole {
+			alert("Soos", err.Error())
 		}
+		fmt.Fprintln(os.Stderr, "soos:", err)
 		os.Exit(1)
-	}
-
-	if ownsConsole() {
-		pause()
 	}
 }
 
@@ -335,6 +332,9 @@ func cmdRun(keepGoing bool) error {
 	interval := sync.MinInterval
 
 	for {
+		if fresh, err := config.Load(); err == nil {
+			cfg = fresh
+		}
 
 		fastest := sync.MaxInterval
 		for _, folder := range cfg.Folders {
@@ -457,30 +457,4 @@ func signalContext() (context.Context, context.CancelFunc) {
 	}()
 
 	return ctx, cancel
-}
-
-const dashboardURL = "https://me.northwestfalls.com"
-
-func cmdTray() error {
-	_, cfg, err := client()
-	if err != nil {
-		return err
-	}
-
-	done := make(chan error, 1)
-
-	go func() {
-		done <- cmdRun(true)
-		ui.Quit()
-	}()
-
-	ui.Watching(len(cfg.Folders), 0)
-
-	ui.Run(ui.Options{
-		Tooltip: "Soos",
-		OnOpen:  func() { _ = browser.Open(dashboardURL) },
-		OnQuit:  requestStop,
-	})
-
-	return <-done
 }

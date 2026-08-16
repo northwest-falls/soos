@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soos</title>
+<!-- Nothing is loaded from anywhere. No fonts, no icons, no stylesheet from our
+     own servers either, because fetching one would tell us Soos is running on
+     this machine and the site promises it never does. -->
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f7f7f7; --line: #e4e4e4;
+    --text: #121212; --dim: #6a6a6a; --faint: #949494;
+    --accent: #1a7f4b; --danger: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121212; --surface: #1a1a1a; --line: #2a2a2a;
+      --text: #f2f2f2; --dim: #a0a0a0; --faint: #6e6e6e;
+      --accent: #1ed760; --danger: #f0756b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px 64px;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 620px; margin: 0 auto; }
+  h1 { margin: 0; font-size: 26px; font-weight: 500; letter-spacing: -0.02em; }
+  .sub { margin: 6px 0 0; color: var(--dim); font-size: 14px; }
+  .card {
+    margin-top: 24px; padding: 20px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  .card p { margin: 0; color: var(--dim); font-size: 14px; }
+  button {
+    font: inherit; font-size: 14px; cursor: pointer;
+    padding: 9px 16px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  button:hover { border-color: var(--faint); }
+  button.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  button.primary:hover { opacity: .88; }
+  button.link {
+    border: 0; background: none; padding: 4px; color: var(--dim);
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  button.link:hover { color: var(--danger); }
+  button[disabled] { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 12px; align-items: center; }
+  .grow { flex: 1; min-width: 0; }
+  .folder { padding: 16px 0; border-top: 1px solid var(--line); }
+  .folder:first-child { border-top: 0; }
+  .fname { font-weight: 500; }
+  .fpath {
+    color: var(--faint); font-size: 12px; word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .opts { display: flex; gap: 18px; margin-top: 10px; }
+  label.opt { display: flex; gap: 7px; align-items: center; color: var(--dim); font-size: 13px; cursor: pointer; }
+  .empty { color: var(--dim); font-size: 14px; text-align: center; padding: 22px 0; }
+  .code {
+    margin: 14px 0 4px; padding: 14px; text-align: center;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 26px; letter-spacing: .18em;
+  }
+  .warn { color: var(--danger); font-size: 13px; margin-top: 6px; }
+  .foot { margin-top: 28px; color: var(--faint); font-size: 12px; text-align: center; }
+  input[type=text] {
+    font: inherit; font-size: 14px; width: 100%;
+    padding: 9px 12px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Soos</h1>
+  <p class="sub" id="sub">Loading…</p>
+
+  <div id="pair"></div>
+  <div id="folders"></div>
+
+  <p class="foot">He only reads. Nothing in your folders is renamed, moved or deleted.</p>
+</div>
+
+<script>
+const T = '__TOKEN__';
+
+const api = async (path, body) => {
+  const res = await fetch(path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { 'X-Soos-Token': T, 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || 'Something went wrong.');
+  return json;
+};
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let state = { folders: [], paired: false };
+
+function drawPair() {
+  const el = document.getElementById('pair');
+  if (state.paired) { el.innerHTML = ''; return; }
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="row">
+        <div class="grow">
+          <h2>This computer is not connected yet</h2>
+          <p>Soos needs your account before he can put anything anywhere.</p>
+        </div>
+        <button class="primary" id="do-pair">Connect</button>
+      </div>
+      <div id="pair-out"></div>
+    </div>`;
+
+  document.getElementById('do-pair').onclick = async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Starting…';
+    try {
+      const r = await api('/api/pair', {});
+      document.getElementById('pair-out').innerHTML = `
+        <div class="code">${esc(r.code)}</div>
+        <p style="text-align:center;color:var(--dim);font-size:13px">
+          Type this code on the page that just opened. It is good for ten minutes.
+        </p>`;
+      e.target.remove();
+      watchPairing();
+    } catch (err) {
+      document.getElementById('pair-out').innerHTML = `<p class="warn">${esc(err.message)}</p>`;
+      e.target.disabled = false;
+      e.target.textContent = 'Connect';
+    }
+  };
+}
+
+// The code is approved in a browser tab we do not control, so the only way to
+// know it worked is to keep asking.
+function watchPairing() {
+  const timer = setInterval(async () => {
+    try {
+      const s = await api('/api/state');
+      if (s.paired) { clearInterval(timer); state = s; draw(); }
+    } catch {}
+  }, 2000);
+}
+
+function drawFolders() {
+  const el = document.getElementById('folders');
+
+  const list = state.folders.length ? state.folders.map((f) => `
+    <div class="folder">
+      <div class="row">
+        <div class="grow">
+          <div class="fname">${esc(f.name)}</div>
+          <div class="fpath">${esc(f.path)}</div>
+          ${f.missing ? '<div class="warn">This folder is not there any more.</div>' : ''}
+        </div>
+        <button class="link" data-remove="${esc(f.path)}">Remove</button>
+      </div>
+      <div class="opts">
+        <label class="opt">
+          <input type="checkbox" data-opt="projects" data-path="${esc(f.path)}"
+                 ${f.projects ? 'checked' : ''}> Session files
+        </label>
+        <label class="opt">
+          <input type="checkbox" data-opt="artwork" data-path="${esc(f.path)}"
+                 ${f.artwork ? 'checked' : ''}> Artwork
+        </label>
+      </div>
+    </div>`).join('') : '<div class="empty">No folders yet.</div>';
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="row" style="margin-bottom:4px">
+        <div class="grow"><h2>Folders he watches</h2></div>
+        <button class="primary" id="add">Add a folder</button>
+      </div>
+      <p style="margin-bottom:12px">Every folder becomes a track. The files inside become its versions.</p>
+      ${list}
+      <div class="row" style="margin-top:16px">
+        <input type="text" id="typed" placeholder="Or paste a folder path" class="grow">
+        <button id="add-typed">Add</button>
+      </div>
+    </div>`;
+
+  document.getElementById('add').onclick = async (e) => {
+    e.target.disabled = true;
+    try {
+      const r = await api('/api/pick', {});
+      if (r.path) { await api('/api/folders/add', { path: r.path }); await refresh(); }
+    } catch (err) { alert(err.message); }
+    e.target.disabled = false;
+  };
+
+  document.getElementById('add-typed').onclick = async () => {
+    const v = document.getElementById('typed').value.trim();
+    if (!v) return;
+    try { await api('/api/folders/add', { path: v }); await refresh(); }
+    catch (err) { alert(err.message); }
+  };
+
+  el.querySelectorAll('[data-remove]').forEach((b) => {
+    b.onclick = async () => {
+      await api('/api/folders/remove', { path: b.dataset.remove });
+      await refresh();
+    };
+  });
+
+  el.querySelectorAll('[data-opt]').forEach((box) => {
+    box.onchange = async () => {
+      const path = box.dataset.path;
+      const f = state.folders.find((x) => x.path === path) || {};
+      const next = {
+        path,
+        projects: box.dataset.opt === 'projects' ? box.checked : !!f.projects,
+        artwork: box.dataset.opt === 'artwork' ? box.checked : !!f.artwork,
+      };
+      await api('/api/folders/options', next);
+      await refresh();
+    };
+  });
+}
+
+function draw() {
+  document.getElementById('sub').textContent = state.paired
+    ? `Connected · version ${state.version}`
+    : `Not connected yet · version ${state.version}`;
+  drawPair();
+  drawFolders();
+}
+
+async function refresh() {
+  state = await api('/api/state');
+  draw();
+}
+
+refresh().catch((e) => {
+  document.getElementById('sub').textContent = e.message;
+});
+</script>
+</body>
+</html>

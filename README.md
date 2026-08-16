@@ -127,17 +127,26 @@ every heuristic treats it that way.
 
 Released, Windows and Linux. macOS needs a Mac to build on.
 
-Windows gets a setup program. Open it, and it asks for your account and which
-folder to watch. There is nothing to type.
+Windows gets a setup program. Open it, and Soos opens a small page in your
+browser to connect your account and choose folders. No console window, no
+commands. He then sits in the tray, and the tray icon opens that page again.
 
-Setup exists for a reason worth stating. A program that copies its own
+Two decisions the antivirus history forced:
+
+Setup, rather than a binary that installs itself. A program that copies its own
 executable into AppData and writes a Run key has done what a dropper does, and
 behavioural antivirus scores the sequence rather than the intent. Soos was
-killed as a trojan for exactly that. Those two steps now belong to setup, and
-the installed binary does neither.
+killed as a trojan for exactly that, so those steps belong to setup now and the
+installed binary does neither.
 
-None of which makes an unsigned binary signed. Windows will still say the
-publisher is unknown.
+The GUI subsystem, so opening him shows no black console window. The obvious
+alternative, making a console and hiding it, is a thing malware does and
+scanners look for. The interface is a local web page he serves on 127.0.0.1
+behind a random token, not a bundled browser engine, so the binary stays one
+small file with nothing extra for a scanner to dislike.
+
+None of which makes an unsigned binary signed. That needs a certificate, and
+the licence is now Apache 2.0 so that a free one becomes possible.
 
 From a terminal, if you would rather:
 

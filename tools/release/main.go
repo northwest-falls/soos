@@ -176,11 +176,17 @@ func findISCC() string {
 }
 
 func build(t target, version, out string) error {
+	ld := "-X main.version=" + version
+	if t.goos == "windows" {
+		// GUI subsystem: Windows makes no console for him, so a double click
+		// shows no window at all. Terminal output still works through
+		// AttachConsole. Not -s or -w: stripping resembles packing to a scanner.
+		ld += " -H=windowsgui"
+	}
+
 	cmd := exec.Command("go", "build",
 		"-trimpath",
-		// No -s or -w until the binaries are signed. Stripping matches the
-		// heuristics antivirus products use for packed malware.
-		"-ldflags", "-X main.version="+version,
+		"-ldflags", ld,
 		"-o", out,
 		"./cmd/soos",
 	)

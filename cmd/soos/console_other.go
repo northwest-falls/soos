@@ -2,8 +2,15 @@
 
 package main
 
-// Nothing double clicks a binary on Unix, so a terminal is always somebody
-// else's and closing it is not our business.
-func ownsConsole() bool { return false }
+import (
+	"fmt"
+	"os"
+)
 
-func pause() {}
+// Nothing is launched by double click here, so a terminal is always present
+// and always somebody else's.
+func attachConsole() bool { return true }
+
+func alert(title, body string) {
+	fmt.Fprintf(os.Stderr, "%s: %s\n", title, body)
+}
