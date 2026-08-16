@@ -57,6 +57,12 @@ func Serve(ctx context.Context, deps Deps, open func(string) error) error {
 	s := &server{deps: deps, token: hex.EncodeToString(raw), addr: ln.Addr().String()}
 
 	mux := http.NewServeMux()
+	// Browsers ask for this unprompted, and with no handler it is a 404 that
+	// the CSP then complains about in the console. An empty 204 is quieter than
+	// carrying an icon that has to be embedded and kept in sync.
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("/", s.handlePage)
 	mux.HandleFunc("/api/state", s.guard(s.handleState))
 	mux.HandleFunc("/api/pick", s.guard(s.handlePick))

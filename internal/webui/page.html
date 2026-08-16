@@ -75,6 +75,22 @@
     padding: 9px 12px; border-radius: 7px;
     border: 1px solid var(--line); background: var(--bg); color: var(--text);
   }
+  .connecting { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+  .connecting p { color: var(--dim); font-size: 14px; }
+  .spinner {
+    width: 20px; height: 20px; flex: none;
+    border: 2px solid var(--line); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 800ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .card.connected { display: flex; gap: 14px; align-items: center; border-color: var(--accent); }
+  .tick {
+    width: 34px; height: 34px; flex: none;
+    display: grid; place-items: center; border-radius: 50%;
+    background: var(--accent); color: var(--bg); font-size: 18px; font-weight: 700;
+    animation: pop 300ms ease-out;
+  }
+  @keyframes pop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 </style>
 </head>
 <body>
@@ -123,35 +139,84 @@ function drawPair() {
       <div id="pair-out"></div>
     </div>`;
 
-  document.getElementById('do-pair').onclick = async (e) => {
-    e.target.disabled = true;
-    e.target.textContent = 'Starting…';
-    try {
-      const r = await api('/api/pair', {});
-      document.getElementById('pair-out').innerHTML = `
-        <div class="code">${esc(r.code)}</div>
-        <p style="text-align:center;color:var(--dim);font-size:13px">
-          Type this code on the page that just opened. It is good for ten minutes.
-        </p>`;
-      e.target.remove();
-      watchPairing();
-    } catch (err) {
-      document.getElementById('pair-out').innerHTML = `<p class="warn">${esc(err.message)}</p>`;
-      e.target.disabled = false;
-      e.target.textContent = 'Connect';
-    }
-  };
+  document.getElementById('do-pair').onclick = startConnect;
+}
+
+async function startConnect(e) {
+  const btn = e.target;
+  btn.disabled = true;
+  btn.textContent = 'Connecting…';
+  const out = document.getElementById('pair-out');
+
+  let code;
+  try {
+    const r = await api('/api/pair', {});
+    code = r.code;
+  } catch (err) {
+    out.innerHTML = `<p class="warn">${esc(err.message)}</p>`;
+    btn.disabled = false;
+    btn.textContent = 'Connect';
+    return;
+  }
+
+  btn.remove();
+
+  // One approve click happens in the account tab Soos just opened. Everything
+  // here is about not making the person do anything else: they watch a spinner,
+  // it turns into a tick. The code is only worth showing if that quiet path is
+  // taking too long, so it starts hidden.
+  out.innerHTML = `
+    <div class="connecting">
+      <div class="spinner"></div>
+      <p>Approve this computer in the tab that just opened. This turns green on its own.</p>
+    </div>
+    <div id="pair-fallback" hidden>
+      <p style="color:var(--dim);font-size:13px;margin-top:14px">
+        Nothing opened, or you closed it? Open your account, go to
+        <strong>Settings &rarr; Computers</strong>, and enter this code:
+      </p>
+      <div class="code">${esc(code)}</div>
+    </div>`;
+
+  // If it has not connected within a reasonable pause, the automatic path did
+  // not work for them, so give them the manual one.
+  const revealAt = setTimeout(() => {
+    const fb = document.getElementById('pair-fallback');
+    if (fb) fb.hidden = false;
+  }, 20000);
+
+  watchPairing(() => clearTimeout(revealAt));
 }
 
 // The code is approved in a browser tab we do not control, so the only way to
 // know it worked is to keep asking.
-function watchPairing() {
+function watchPairing(onDone) {
   const timer = setInterval(async () => {
     try {
       const s = await api('/api/state');
-      if (s.paired) { clearInterval(timer); state = s; draw(); }
+      if (s.paired) {
+        clearInterval(timer);
+        if (onDone) onDone();
+        state = s;
+        showConnected();
+      }
     } catch {}
-  }, 2000);
+  }, 1500);
+}
+
+// A moment of success before the folders appear, because the whole point of
+// this screen was that connecting should feel like it worked.
+function showConnected() {
+  const el = document.getElementById('pair');
+  el.innerHTML = `
+    <div class="card connected">
+      <div class="tick">&#10003;</div>
+      <div>
+        <h2>Connected</h2>
+        <p>This computer is linked to your account. Add a folder below and Soos takes it from there.</p>
+      </div>
+    </div>`;
+  setTimeout(draw, 2200);
 }
 
 function drawFolders() {

@@ -44,6 +44,17 @@ func IndexPath() (string, error) {
 	return filepath.Join(d, indexName), nil
 }
 
+// UIAddrPath holds the address of the running interface so a second launch can
+// open it rather than start a rival one. It carries the token, so it lives
+// beside the credential and is written owner-only.
+func UIAddrPath() (string, error) {
+	d, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "ui.addr"), nil
+}
+
 func Load() (*Config, error) {
 	d, err := Dir()
 	if err != nil {

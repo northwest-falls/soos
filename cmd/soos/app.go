@@ -4,13 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/northwest-falls/soos/internal/api"
 	"github.com/northwest-falls/soos/internal/browser"
 	"github.com/northwest-falls/soos/internal/config"
+	"github.com/northwest-falls/soos/internal/single"
 	"github.com/northwest-falls/soos/internal/ui"
 	"github.com/northwest-falls/soos/internal/webui"
 )
@@ -18,8 +21,22 @@ import (
 // Soos with nobody typing at him: the tray, the folder watcher, and a page to
 // change things on. This is what setup starts and what the Run key starts.
 func runApp() error {
+	// One Soos per machine. Setup launches him, the Run key launches him, and a
+	// person clicking the icon launches him, so without this there would be
+	// several trays and several servers on several ports, each orphaning the
+	// last one's open page. That last part is exactly the fault that looked
+	// like the app doing nothing.
+	first, err := single.Acquire("soos-agent")
+	if err == nil && !first {
+		if u := readUIAddr(); u != "" {
+			_ = browser.Open(u)
+		}
+		return nil
+	}
+
 	ctx, cancel := signalContext()
 	defer cancel()
+	defer clearUIAddr()
 
 	var page atomic.Value
 
@@ -30,6 +47,8 @@ func runApp() error {
 			StartPair: startPair,
 		}, func(u string) error {
 			page.Store(u)
+			// So the next launch opens this page instead of starting a rival.
+			writeUIAddr(u)
 			return nil
 		})
 		if err != nil {
@@ -83,15 +102,60 @@ func runApp() error {
 }
 
 // The page on its own, for anyone who would rather not have a tray icon.
+//
+// Shares the single-instance lock with the tray, so running this while Soos is
+// already up opens the page he is already serving rather than a second one.
 func cmdUI() error {
+	first, err := single.Acquire("soos-agent")
+	if err == nil && !first {
+		if u := readUIAddr(); u != "" {
+			return browser.Open(u)
+		}
+		return nil
+	}
+
 	ctx, cancel := signalContext()
 	defer cancel()
+	defer clearUIAddr()
 
 	return webui.Serve(ctx, webui.Deps{
 		Version:   version,
 		Paired:    isPaired,
 		StartPair: startPair,
-	}, browser.Open)
+	}, func(u string) error {
+		writeUIAddr(u)
+		return browser.Open(u)
+	})
+}
+
+func writeUIAddr(url string) {
+	p, err := config.UIAddrPath()
+	if err != nil {
+		return
+	}
+	// On a fresh install nothing has been saved yet, so the directory the
+	// address lives in does not exist. Without this the second launch has no
+	// address to open and falls back to doing nothing.
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	_ = os.WriteFile(p, []byte(url), 0o600)
+}
+
+func readUIAddr() string {
+	p, err := config.UIAddrPath()
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func clearUIAddr() {
+	if p, err := config.UIAddrPath(); err == nil {
+		_ = os.Remove(p)
+	}
 }
 
 func isPaired() bool {
@@ -126,6 +190,18 @@ func startPair(context.Context) (string, string, error) {
 	url := start.ApproveURL
 	if url == "" {
 		url = "https://me.northwestfalls.com/#settings/devices"
+	}
+
+	// The code rides along so the account page can fill it in and leave one
+	// approve click, rather than a code to read off one screen and type into
+	// another. The page still requires that click: it is what proves the person
+	// approving owns the account.
+	if start.UserCode != "" {
+		sep := "?"
+		if strings.Contains(url, "?") {
+			sep = "&"
+		}
+		url += sep + "code=" + start.UserCode
 	}
 
 	go func() {
