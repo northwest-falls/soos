@@ -143,7 +143,9 @@ func client() (*api.Client, *config.Config, error) {
 	return c, cfg, nil
 }
 
-func cmdPair() error {
+func cmdPair() error { return pair(true) }
+
+func pair(hintNext bool) error {
 	c, cfg, err := client()
 	if err != nil {
 		return err
@@ -195,7 +197,13 @@ func cmdPair() error {
 		return err
 	}
 
-	fmt.Println("\n  Paired. Add a folder with: soos add <folder>")
+	// The welcome flow asks for the folder itself on the very next line, so
+	// naming a command there is how somebody ends up typing it into the prompt.
+	if hintNext {
+		fmt.Println("\n  Paired. Add a folder with: soos add <folder>")
+	} else {
+		fmt.Println("\n  Paired.")
+	}
 
 	return nil
 }

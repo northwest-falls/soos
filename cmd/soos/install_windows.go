@@ -17,9 +17,10 @@ func installPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// %LOCALAPPDATA%\Programs, the per-user location. No administrator prompt,
-	// which is the thing people cancel during setup.
-	return filepath.Join(filepath.Dir(base), "Programs", "Soos", "soos.exe"), nil
+	// UserCacheDir is already %LOCALAPPDATA% on Windows. Taking its parent gave
+	// %APPDATA%\Programs, which is not where anything installs, and left setup's
+	// copy and this one in different places with the Run key on the wrong one.
+	return filepath.Join(base, "Programs", "Soos", "soos.exe"), nil
 }
 
 func installAutostart(exe string) error {

@@ -49,7 +49,7 @@ func cmdWelcome() error {
 	}
 	if token == "" {
 		fmt.Println()
-		if err := cmdPair(); err != nil {
+		if err := pair(false); err != nil {
 			return err
 		}
 	}
@@ -108,8 +108,19 @@ func askForFolder(cfg *config.Config) error {
 		return nil
 	}
 
-	// Explorer quotes anything containing a space.
 	path := strings.TrimSpace(line)
+
+	// Having just been shown "soos add <folder>", people type it. Reading the
+	// whole line as a path and then saying the folder does not exist is
+	// pedantry about a mistake we invited.
+	for _, prefix := range []string{"soos add ", "soos.exe add ", "add ", "soos "} {
+		if len(path) > len(prefix) && strings.EqualFold(path[:len(prefix)], prefix) {
+			path = strings.TrimSpace(path[len(prefix):])
+			break
+		}
+	}
+
+	// Explorer quotes anything containing a space.
 	path = strings.Trim(path, `"'`)
 	path = strings.TrimSpace(path)
 	if path == "" {
