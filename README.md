@@ -123,6 +123,11 @@ every heuristic treats it that way.
 
 Released, Windows and Linux. macOS needs a Mac to build on.
 
+Open the downloaded file and he installs himself, asks for your account and
+asks which folder to watch. There is nothing to type.
+
+From a terminal, if you would rather:
+
 ```
 soos install     put him in place, start him with your computer
 soos pair        connect him to your account

@@ -15,7 +15,9 @@ import (
 // One binary that can put itself in place is smaller, needs no packaging
 // toolchain, and can be read by the person running it. A second program whose
 // only job is to copy the first is a second program to sign, ship and trust.
-func cmdInstall() error {
+func cmdInstall() error { return install(true) }
+
+func install(showNext bool) error {
 	src, err := os.Executable()
 	if err != nil {
 		return err
@@ -49,8 +51,10 @@ func cmdInstall() error {
 		fmt.Println("  Could not add the right click entry:", err)
 	}
 
-	fmt.Println()
-	fmt.Println("  Next: soos pair")
+	if showNext {
+		fmt.Println()
+		fmt.Println("  Next: soos pair")
+	}
 
 	return nil
 }

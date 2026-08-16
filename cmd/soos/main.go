@@ -45,9 +45,19 @@ const usage = `soos: watches a folder and puts what lands there in your vault.
 `
 
 func main() {
+	// Explorer gives us a console of our own and takes it away the instant we
+	// return, so the command list is unreadable there. Somebody who arrived by
+	// double click gets set up instead of a flash of text.
 	if len(os.Args) < 2 {
-		fmt.Print(usage)
-		os.Exit(2)
+		if !ownsConsole() {
+			fmt.Print(usage)
+			os.Exit(2)
+		}
+		if err := cmdWelcome(); err != nil {
+			fmt.Fprintln(os.Stderr, "\n  soos:", err)
+		}
+		pause()
+		return
 	}
 
 	var err error
@@ -86,13 +96,30 @@ func main() {
 	case "uninstall-menu":
 		err = cmdUninstallMenu()
 	default:
+		// A folder dropped onto the program is a request to watch it. The path
+		// arrives exactly where a command would, so it has to be ruled out
+		// before treating the argument as a mistake.
+		if st, e := os.Stat(os.Args[1]); e == nil && st.IsDir() {
+			err = cmdAdd(os.Args[1:2])
+			break
+		}
 		fmt.Print(usage)
+		if ownsConsole() {
+			pause()
+		}
 		os.Exit(2)
 	}
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "soos:", err)
+		if ownsConsole() {
+			pause()
+		}
 		os.Exit(1)
+	}
+
+	if ownsConsole() {
+		pause()
 	}
 }
 
