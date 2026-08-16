@@ -33,6 +33,9 @@ const usage = `soos: watches a folder and puts what lands there in your vault.
   soos once            run one pass and exit
   soos run             keep running
   soos tray            keep running, with an icon in the tray
+  soos install         put Soos in place and start him with your computer
+  soos uninstall       take him back out
+
   soos forget          remove this computer's credential
 
   soos install-menu    add Soos to the right click menu
@@ -72,6 +75,10 @@ func main() {
 		err = cmdRun(true)
 	case "tray":
 		err = cmdTray()
+	case "install":
+		err = cmdInstall()
+	case "uninstall":
+		err = cmdUninstall()
 	case "forget":
 		err = cmdForget()
 	case "install-menu":
@@ -241,6 +248,8 @@ func cmdList() error {
 
 	return nil
 }
+
+func ForgetTokenQuiet() error { return config.ForgetToken() }
 
 func cmdForget() error {
 	if err := config.ForgetToken(); err != nil {

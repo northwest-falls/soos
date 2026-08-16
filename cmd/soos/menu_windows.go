@@ -19,6 +19,10 @@ func cmdInstallMenu() error {
 	if err != nil {
 		return err
 	}
+	return installMenuFor(exe)
+}
+
+func installMenuFor(exe string) error {
 
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, verbKey, registry.SET_VALUE)
 	if err != nil {
