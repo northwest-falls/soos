@@ -121,5 +121,13 @@ every heuristic treats it that way.
 
 ## Status
 
-The source is public. The app is not released: there is nothing to download
-yet, and nothing here is running on anybody's machine.
+Released, Windows and Linux. macOS needs a Mac to build on.
+
+```
+soos install     put him in place, start him with your computer
+soos pair        connect him to your account
+soos add <folder>
+```
+
+Not signed yet, so Windows will say the publisher is unknown. Every release
+carries `SHA256SUMS`, and you can build your own from the tag and compare.
