@@ -24,10 +24,14 @@ built, and you can compile it yourself and check the two match. If the code and
 the page ever disagree, the code is the truth and the page is a bug we want
 told about.
 
-**Source-available, not open source**, and we would rather say that plainly
-than use the more flattering word incorrectly. You may read it, build it, run
-your own build, and publish whatever you find. You may not redistribute it or
-reuse it in another product. See [LICENSE](LICENSE).
+Licensed under **Apache 2.0**. Read it, build it, fork it, ship it in your own
+thing. See [LICENSE](LICENSE).
+
+The name is the exception, and it is a trademark matter rather than a copyright
+one: the licence covers the code, not the right to call a build you made "Soos"
+or to present it as coming from Northwest Falls. That distinction is the point
+of signing releases, which is a promise about who built a file that no licence
+can make.
 
 ---
 
