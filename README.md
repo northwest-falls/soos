@@ -143,10 +143,14 @@ The GUI subsystem, so opening him shows no black console window. The obvious
 alternative, making a console and hiding it, is a thing malware does and
 scanners look for. The interface is a local web page he serves on 127.0.0.1
 behind a random token, not a bundled browser engine, so the binary stays one
-small file with nothing extra for a scanner to dislike.
+small file with nothing extra for a scanner to dislike. That page is served
+only while it is being used and its socket closes after a quiet spell, so the
+process sitting in the tray is just a folder watcher, with nothing listening.
 
-None of which makes an unsigned binary signed. That needs a certificate, and
-the licence is now Apache 2.0 so that a free one becomes possible.
+None of which makes an unsigned binary signed, and that is the one that
+matters. The licence is Apache 2.0 now so that [SignPath Foundation](SIGNING.md)
+can sign releases for free. Until that is switched on, Windows still names no
+publisher; check a download against `SHA256SUMS` or build your own from the tag.
 
 From a terminal, if you would rather:
 

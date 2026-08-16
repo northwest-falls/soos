@@ -1,0 +1,100 @@
+# Build on a tag, sign through SignPath, publish the signed files.
+#
+# SignPath Foundation signs open source for free, and the signature is the
+# thing that actually clears SmartScreen and the behavioural antivirus verdicts
+# that a self-installing, folder-reading, uploading agent will always attract.
+# It signs artefacts built here and checks they came from this repository, so
+# the release has to be built in CI rather than on a laptop.
+#
+# What has to exist before this runs, all set once in the repository:
+#   secret  SIGNPATH_API_TOKEN     from the SignPath project, a CI user token
+#   var     SIGNPATH_ORG_ID        the SignPath organisation id (a GUID)
+#   var     SIGNPATH_PROJECT       the project slug, e.g. soos
+#   var     SIGNPATH_POLICY        the signing policy slug, e.g. release-signing
+# Settings, then Secrets and variables, then Actions.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Version from the tag
+        id: v
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Windows resource
+        shell: bash
+        run: |
+          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+          "$(go env GOPATH)/bin/goversioninfo" -o cmd/soos/resource_windows_amd64.syso versioninfo.json
+
+      - name: Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build binaries and installer
+        run: go run ./tools/release -version ${{ steps.v.outputs.version }} -out dist
+
+      - name: Collect what gets signed
+        shell: bash
+        run: |
+          mkdir signing
+          cp dist/SoosSetup.exe dist/soos-windows-amd64.exe dist/soos-windows-arm64.exe signing/
+
+      - uses: actions/upload-artifact@v4
+        id: upload
+        with:
+          name: unsigned
+          path: signing/
+
+      # Hands the Windows executables to SignPath and waits for the signed set.
+      # The Linux builds are not signed: there is no signing to do there, only
+      # the checksums, which the last step publishes.
+      - name: Sign through SignPath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORG_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Put signed files back and rebuild checksums
+        shell: bash
+        run: |
+          cp signed/SoosSetup.exe signed/soos-windows-amd64.exe signed/soos-windows-arm64.exe dist/
+          cd dist
+          rm -f SHA256SUMS
+          for f in SoosSetup.exe soos-windows-amd64.exe soos-windows-arm64.exe soos-linux-amd64 soos-linux-arm64; do
+            sha256sum "$f" >> SHA256SUMS
+          done
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/SoosSetup.exe
+            dist/soos-windows-amd64.exe
+            dist/soos-windows-arm64.exe
+            dist/soos-linux-amd64
+            dist/soos-linux-arm64
+            dist/SHA256SUMS

@@ -78,6 +78,11 @@ Root: HKCU; Subkey: "Software\Classes\*\shell\SoosShare\command"; \
 [Icons]
 Name: "{userprograms}\Soos"; Filename: "{app}\soos.exe"
 
+[InstallDelete]
+; An early build installed to the wrong place and left a second copy behind.
+; Setup clears it so nobody is left with two Sooses, one of them orphaned.
+Type: filesandordirs; Name: "{userappdata}\..\Programs\Soos"
+
 [Run]
 ; Straight into pairing, in a window that stays open, because the account and
 ; the folder are the two things setup cannot answer on its own.
@@ -87,3 +92,36 @@ Filename: "{app}\soos.exe"; Description: "Set up Soos now"; \
 [UninstallRun]
 ; The credential is no use to anyone once he is gone.
 Filename: "{app}\soos.exe"; Parameters: "forget"; Flags: runhidden; RunOnceId: "SoosForget"
+
+[Code]
+{ The stray copy above installs to a different folder from this one, so the
+  path constant cannot point at it directly. This resolves it from the
+  environment instead. }
+function StrayDir(): String;
+begin
+  Result := ExtractFileDir(GetEnv('LOCALAPPDATA')) + '\Programs\Soos';
+end;
+
+{ A running Soos, whether this version or an old stray, holds the
+  single-instance slot and locks its own exe. It has to stop before the new one
+  can take over, so an update replaces rather than doubles up. Gracefully
+  first, then firmly for anything that ignored the ask. Killing him loses no
+  work: the index is written as it goes. }
+procedure StopRunning();
+var
+  code: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM soos.exe', '', SW_HIDE, ewWaitUntilTerminated, code);
+  Sleep(1200);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM soos.exe /F', '', SW_HIDE, ewWaitUntilTerminated, code);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+  begin
+    StopRunning();
+    if DirExists(StrayDir()) then
+      DelTree(StrayDir(), True, True, True);
+  end;
+end;

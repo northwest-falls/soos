@@ -106,17 +106,39 @@
 
 <script>
 const T = '__TOKEN__';
+let everLoaded = false;
 
 const api = async (path, body) => {
-  const res = await fetch(path, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { 'X-Soos-Token': T, 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { 'X-Soos-Token': T, 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (e) {
+    // A network error after the page has already worked means Soos closed the
+    // connection to rest, not that anything is wrong.
+    if (everLoaded) { asleep(); }
+    throw e;
+  }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || 'Something went wrong.');
   return json;
 };
+
+// After a quiet spell Soos closes this page's connection to stay out of the
+// way. A raw fetch error would read as broken, so say what happened.
+function asleep() {
+  document.getElementById('pair').innerHTML = '';
+  document.getElementById('folders').innerHTML = `
+    <div class="card">
+      <h2>This page went to sleep</h2>
+      <p>Soos closes it after a while so he sits quietly in the background. Open
+      him again from the tray icon by the clock to pick up where you left off.</p>
+    </div>`;
+  document.getElementById('sub').textContent = 'Sleeping';
+}
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -309,7 +331,7 @@ async function refresh() {
   draw();
 }
 
-refresh().catch((e) => {
+refresh().then(() => { everLoaded = true; }).catch((e) => {
   document.getElementById('sub').textContent = e.message;
 });
 </script>

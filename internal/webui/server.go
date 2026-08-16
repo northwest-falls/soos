@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/northwest-falls/soos/internal/config"
@@ -29,12 +30,21 @@ type Deps struct {
 	// Paired rather than holding a request open for ten minutes.
 	StartPair func(ctx context.Context) (code string, approveURL string, err error)
 	Paired    func() bool
+
+	// After this long with no request, the server shuts itself down and the
+	// listening socket goes away. Zero keeps it up for as long as it is asked
+	// to run. A freshly installed program that keeps a socket open forever is
+	// the shape of a backdoor, and there is no reason to be that shape when
+	// nobody is looking at the page.
+	IdleShutdown time.Duration
 }
 
 type server struct {
 	deps  Deps
 	token string
 	addr  string
+
+	lastReq atomic.Int64
 }
 
 // Serve opens the interface and returns when the context is cancelled.
@@ -82,12 +92,44 @@ func Serve(ctx context.Context, deps Deps, open func(string) error) error {
 	}
 	fmt.Println("  Soos is open at", url)
 
+	s.lastReq.Store(time.Now().UnixNano())
+
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdown)
 	}()
+
+	if deps.IdleShutdown > 0 {
+		go func() {
+			// Check a few times within the window rather than on a fixed clock,
+			// so a short window is honoured about as promptly as a long one.
+			step := deps.IdleShutdown / 3
+			if step > 30*time.Second {
+				step = 30 * time.Second
+			}
+			if step < 50*time.Millisecond {
+				step = 50 * time.Millisecond
+			}
+			t := time.NewTicker(step)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					idle := time.Since(time.Unix(0, s.lastReq.Load()))
+					if idle >= deps.IdleShutdown {
+						shutdown, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+						_ = srv.Shutdown(shutdown)
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+	}
 
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		return err
@@ -117,6 +159,7 @@ func (s *server) guard(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "no", http.StatusForbidden)
 			return
 		}
+		s.lastReq.Store(time.Now().UnixNano())
 		w.Header().Set("Cache-Control", "no-store")
 		next(w, r)
 	}
@@ -132,6 +175,7 @@ func (s *server) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.lastReq.Store(time.Now().UnixNano())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy",

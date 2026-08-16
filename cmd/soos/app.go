@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/northwest-falls/soos/internal/api"
@@ -38,37 +38,15 @@ func runApp() error {
 	defer cancel()
 	defer clearUIAddr()
 
-	var page atomic.Value
+	host := &uiHost{}
 
-	go func() {
-		err := webui.Serve(ctx, webui.Deps{
-			Version:   version,
-			Paired:    isPaired,
-			StartPair: startPair,
-		}, func(u string) error {
-			page.Store(u)
-			// So the next launch opens this page instead of starting a rival.
-			writeUIAddr(u)
-			return nil
-		})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "soos:", err)
-		}
-	}()
-
-	open := func() {
-		if u, ok := page.Load().(string); ok && u != "" {
-			_ = browser.Open(u)
-		}
-	}
-
-	// Nothing to do until somebody has paired and named a folder, and sitting
-	// silently in the tray on a fresh install reads as not working.
+	// The page is opened for setup and the occasional look, not kept up. So the
+	// server starts when it is wanted and closes its socket when it has been
+	// idle a while, and the steady state of the tray is a process that only
+	// watches a folder and uploads, with nothing listening. That is a plainer
+	// thing for a scanner to look at.
 	if !isPaired() || !watching() {
-		for i := 0; i < 100 && page.Load() == nil; i++ {
-			time.Sleep(20 * time.Millisecond)
-		}
-		open()
+		host.open(ctx)
 	}
 
 	go func() {
@@ -94,11 +72,68 @@ func runApp() error {
 
 	ui.Run(ui.Options{
 		Tooltip: "Soos",
-		OnOpen:  open,
+		OnOpen:  func() { host.open(ctx) },
 		OnQuit:  requestStop,
 	})
 
 	return nil
+}
+
+// uiHost runs the interface only while it is wanted. The first request starts
+// it, idleness stops it, and asking again starts it back up.
+type uiHost struct {
+	mu  sync.Mutex
+	url string
+}
+
+func (h *uiHost) open(parent context.Context) {
+	h.mu.Lock()
+	if h.url != "" {
+		u := h.url
+		h.mu.Unlock()
+		_ = browser.Open(u)
+		return
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	ready := make(chan string, 1)
+	h.mu.Unlock()
+
+	go func() {
+		err := webui.Serve(ctx, webui.Deps{
+			Version:      version,
+			Paired:       isPaired,
+			StartPair:    startPair,
+			IdleShutdown: 10 * time.Minute,
+		}, func(u string) error {
+			h.mu.Lock()
+			h.url = u
+			h.mu.Unlock()
+			writeUIAddr(u)
+			select {
+			case ready <- u:
+			default:
+			}
+			return nil
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "soos:", err)
+		}
+
+		// Stopped, whether idle or shutting down. Forget the address so the next
+		// open starts a fresh one rather than pointing at a dead port.
+		h.mu.Lock()
+		h.url = ""
+		h.mu.Unlock()
+		clearUIAddr()
+		cancel()
+	}()
+
+	select {
+	case u := <-ready:
+		_ = browser.Open(u)
+	case <-time.After(3 * time.Second):
+	}
 }
 
 // The page on its own, for anyone who would rather not have a tray icon.
@@ -119,9 +154,10 @@ func cmdUI() error {
 	defer clearUIAddr()
 
 	return webui.Serve(ctx, webui.Deps{
-		Version:   version,
-		Paired:    isPaired,
-		StartPair: startPair,
+		Version:      version,
+		Paired:       isPaired,
+		StartPair:    startPair,
+		IdleShutdown: 10 * time.Minute,
 	}, func(u string) error {
 		writeUIAddr(u)
 		return browser.Open(u)
