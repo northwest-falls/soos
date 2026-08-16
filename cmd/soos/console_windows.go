@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"syscall"
 	"unsafe"
 )
@@ -29,13 +28,4 @@ func ownsConsole() bool {
 func pause() {
 	fmt.Print("\n  Press Enter to close. ")
 	bufio.NewReader(os.Stdin).ReadString('\n')
-}
-
-func startBackground(exe string, args ...string) error {
-	cmd := exec.Command(exe, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	return cmd.Process.Release()
 }

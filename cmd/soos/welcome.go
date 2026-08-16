@@ -54,20 +54,25 @@ func cmdWelcome() error {
 		return nil
 	}
 
-	// Autostart only covers the next sign in. Somebody who has just set this up
-	// is entitled to have it working now rather than tomorrow.
-	dst, err := installPath()
-	if err != nil {
+	// One pass here, in the window that is already open, rather than launching
+	// a copy of himself in the background.
+	//
+	// A program that copies itself into AppData, writes a Run key and then
+	// spawns a hidden instance has done the three things a dropper does, in the
+	// order a dropper does them. Antivirus is right to score that, and no
+	// amount of being innocent gets the sequence past it.
+	//
+	// It is also just better. The first thing anyone sees is their own music
+	// going up, in front of them, rather than a promise.
+	fmt.Println()
+	fmt.Println("  Taking a first look now.")
+
+	if err := cmdRun(false); err != nil {
 		return err
-	}
-	if err := startBackground(dst, "tray"); err != nil {
-		fmt.Println()
-		fmt.Println("  Set up. He will start with your computer.")
-		return nil
 	}
 
 	fmt.Println()
-	fmt.Println("  He is running. Look for the pine cone by the clock.")
+	fmt.Println("  Done. He starts with your computer from now on.")
 
 	return nil
 }
