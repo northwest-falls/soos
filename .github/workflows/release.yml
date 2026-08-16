@@ -65,9 +65,11 @@ jobs:
           path: signing/
 
       # Hands the Windows executables to SignPath and waits for the signed set.
-      # The Linux builds are not signed: there is no signing to do there, only
-      # the checksums, which the last step publishes.
+      # Skipped until SignPath is set up, so tagging still produces a release in
+      # the meantime rather than a red X. The Linux builds are not signed:
+      # there is nothing to sign there, only the checksums the last step writes.
       - name: Sign through SignPath
+        if: vars.SIGNPATH_ORG_ID != ''
         uses: signpath/github-action-submit-signing-request@v1
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -78,10 +80,14 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: signed
 
-      - name: Put signed files back and rebuild checksums
+      - name: Put signed files back
+        if: vars.SIGNPATH_ORG_ID != ''
+        shell: bash
+        run: cp signed/SoosSetup.exe signed/soos-windows-amd64.exe signed/soos-windows-arm64.exe dist/
+
+      - name: Checksums over whatever we are shipping
         shell: bash
         run: |
-          cp signed/SoosSetup.exe signed/soos-windows-amd64.exe signed/soos-windows-arm64.exe dist/
           cd dist
           rm -f SHA256SUMS
           for f in SoosSetup.exe soos-windows-amd64.exe soos-windows-arm64.exe soos-linux-amd64 soos-linux-arm64; do

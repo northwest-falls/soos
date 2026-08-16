@@ -77,6 +77,23 @@ func (s *Settler) Check(path string) (Result, os.FileInfo, error) {
 	}
 
 	now := s.Now()
+	quiet := s.quiet()
+
+	// A file whose last change is already older than the quiet window has gone
+	// quiet on its own, so it is ready the first time it is seen. Without this a
+	// file that was sitting in the folder before Soos looked would only settle
+	// after being watched hold still across two passes, which is why nothing
+	// was uploading: a fresh look never had a previous one to compare against.
+	//
+	// The lock check below is what still protects a file that a program is
+	// holding open, mtime notwithstanding.
+	if now.Sub(info.ModTime()) >= quiet {
+		if !canOpenExclusive(path) {
+			return Locked, info, nil
+		}
+		s.forget(path)
+		return Ready, info, nil
+	}
 
 	s.mu.Lock()
 	prev, had := s.seen[path]
@@ -86,7 +103,6 @@ func (s *Settler) Check(path string) (Result, os.FileInfo, error) {
 		s.mu.Unlock()
 		return NotReady, info, nil
 	}
-	quiet := s.quiet()
 	elapsed := now.Sub(prev.seen)
 	s.mu.Unlock()
 

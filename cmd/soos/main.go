@@ -331,6 +331,16 @@ func cmdRun(keepGoing bool) error {
 
 	interval := sync.MinInterval
 
+	// One settler per folder, kept across passes. It remembers what each file
+	// looked like last time so it can tell a file that has stopped changing
+	// from one still being written. A fresh settler every pass forgets that
+	// each time, so no file ever counted as settled and nothing uploaded.
+	settlers := map[string]*watch.Settler{}
+
+	// Consecutive rejections. The credential is only given up after several in
+	// a row, so a passing blip does not force a re-pair.
+	unauthorized := 0
+
 	for {
 		if fresh, err := config.Load(); err == nil {
 			cfg = fresh
@@ -342,11 +352,17 @@ func cmdRun(keepGoing bool) error {
 				return nil
 			}
 
+			settler := settlers[folder.Path]
+			if settler == nil {
+				settler = watch.NewSettler()
+				settlers[folder.Path] = settler
+			}
+
 			s := &sync.Syncer{
 				Root:    folder.Path,
 				Opts:    scan.Options{Projects: folder.Projects, Artwork: folder.Artwork},
 				Index:   ix,
-				Settler: watch.NewSettler(),
+				Settler: settler,
 				API:     c,
 				List:    listFolder,
 			}
@@ -363,11 +379,22 @@ func cmdRun(keepGoing bool) error {
 			}
 
 			if out != nil && out.Stopped {
-
+				// Do not throw the credential away on the first rejection. A
+				// single 401 can be a server hiccup or a moment of clock skew,
+				// and deleting the credential turns that blip into a forced
+				// re-pair. A device that has really been revoked keeps saying so,
+				// pass after pass, and that is what this waits for.
+				unauthorized++
 				fmt.Fprintln(os.Stderr, "soos:", out.Reason)
-				_ = config.ForgetToken()
-				return errors.New("this computer is no longer paired. Run: soos pair")
+
+				if unauthorized >= 3 {
+					_ = config.ForgetToken()
+					return errors.New("this computer is no longer paired. Run: soos pair")
+				}
+
+				break
 			}
+			unauthorized = 0
 
 			if err != nil && out != nil && !out.Paused {
 				fmt.Fprintln(os.Stderr, "soos:", err)
