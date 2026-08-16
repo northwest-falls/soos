@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"path/filepath"
 	"time"
 
 	"github.com/northwest-falls/soos/internal/api"
@@ -210,9 +211,18 @@ func (s *Syncer) Once(ctx context.Context) (*Outcome, error) {
 
 func (s *Syncer) upload(ctx context.Context, p pending) error {
 	req := api.InitRequest{
-		Filename:    p.cand.Path,
+		// The base name, not the whole path. Sending the absolute path made the
+		// vault title read C:\Users\...\songs\Project 23.
+		Filename:    filepath.Base(p.cand.Path),
 		ContentHash: p.hash,
 		Kind:        kindFor(p.cand.Kind),
+	}
+
+	// A file inside a subfolder makes that folder the track, so its name is the
+	// title. A loose file in the watched folder has no folder to name it, so the
+	// title is left for the server to take from the file.
+	if p.cand.Folder != s.Root {
+		req.Title = p.cand.Title
 	}
 
 	if b, ok := s.Index.TrackFor(p.cand.Folder); ok {

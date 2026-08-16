@@ -16,6 +16,7 @@ const maxPartAttempts = 5
 
 type InitRequest struct {
 	Filename    string `json:"filename"`
+	Title       string `json:"title,omitempty"`
 	ByteSize    int64  `json:"byte_size"`
 	ContentHash string `json:"content_hash"`
 	Kind        string `json:"kind"`
@@ -158,7 +159,7 @@ func (c *Client) UploadFile(
 			n = st.Size() - off
 		}
 
-			// SectionReader so a retry can rewind. A plain Reader would send nothing
+		// SectionReader so a retry can rewind. A plain Reader would send nothing
 		// the second time and store a truncated file.
 		sec := io.NewSectionReader(f, off, n)
 
