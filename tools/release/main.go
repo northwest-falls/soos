@@ -78,6 +78,19 @@ func run(version, outDir string) error {
 		built = append(built, path)
 	}
 
+	// Inno resolves its output directory against the script, not the working
+	// directory, so it has to be told in absolute terms.
+	outAbs, err := filepath.Abs(outDir)
+	if err != nil {
+		return err
+	}
+
+	if setup, err := buildInstaller(version, outAbs); err != nil {
+		return err
+	} else if setup != "" {
+		built = append(built, setup)
+	}
+
 	sums, err := checksums(built)
 	if err != nil {
 		return err
@@ -102,6 +115,64 @@ func run(version, outDir string) error {
 	fmt.Println("Publish them with the release. They are the whole point of publishing the source.")
 
 	return nil
+}
+
+// Setup is what people should be downloading, so it is built and checksummed
+// with everything else rather than assembled by hand afterwards.
+func buildInstaller(version, outDir string) (string, error) {
+	if runtime.GOOS != "windows" {
+		fmt.Println("  installer skipped, it needs Windows")
+		return "", nil
+	}
+
+	iscc := findISCC()
+	if iscc == "" {
+		fmt.Println("  installer skipped, Inno Setup is not installed")
+		fmt.Println("    winget install JRSoftware.InnoSetup")
+		return "", nil
+	}
+
+	fmt.Println("  building installer")
+
+	cmd := exec.Command(iscc,
+		"/DAppVersion="+version,
+		"/O"+outDir,
+		filepath.Join("installer", "soos.iss"),
+	)
+	cmd.Stderr = os.Stderr
+
+	if out, err := cmd.Output(); err != nil {
+		os.Stderr.Write(out)
+		return "", fmt.Errorf("installer: %w", err)
+	}
+
+	return filepath.Join(outDir, "SoosSetup.exe"), nil
+}
+
+func findISCC() string {
+	if p, err := exec.LookPath("ISCC.exe"); err == nil {
+		return p
+	}
+
+	// Installs per user or machine wide depending on how it was fetched, and
+	// winget does the former.
+	for _, base := range []string{
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs"),
+		os.Getenv("ProgramFiles(x86)"),
+		os.Getenv("ProgramFiles"),
+	} {
+		if base == "" {
+			continue
+		}
+		for _, v := range []string{"Inno Setup 6", "Inno Setup 7"} {
+			p := filepath.Join(base, v, "ISCC.exe")
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+
+	return ""
 }
 
 func build(t target, version, out string) error {

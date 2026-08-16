@@ -123,8 +123,17 @@ every heuristic treats it that way.
 
 Released, Windows and Linux. macOS needs a Mac to build on.
 
-Open the downloaded file and he installs himself, asks for your account and
-asks which folder to watch. There is nothing to type.
+Windows gets a setup program. Open it, and it asks for your account and which
+folder to watch. There is nothing to type.
+
+Setup exists for a reason worth stating. A program that copies its own
+executable into AppData and writes a Run key has done what a dropper does, and
+behavioural antivirus scores the sequence rather than the intent. Soos was
+killed as a trojan for exactly that. Those two steps now belong to setup, and
+the installed binary does neither.
+
+None of which makes an unsigned binary signed. Windows will still say the
+publisher is unknown.
 
 From a terminal, if you would rather:
 

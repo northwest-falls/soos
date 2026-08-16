@@ -22,8 +22,25 @@ func cmdWelcome() error {
 	fmt.Println("  He watches a folder and puts what lands there in your vault.")
 	fmt.Println()
 
-	if err := install(false); err != nil {
+	// Setup has already put him here and written the registry entries, so doing
+	// it again would be the self-copy this was moved out of Soos to avoid.
+	// Started from a download folder instead, there is no setup to have done
+	// it, and he still has to put himself somewhere.
+	self, err := os.Executable()
+	if err != nil {
 		return err
+	}
+	self, _ = filepath.EvalSymlinks(self)
+
+	dst, err := installPath()
+	if err != nil {
+		return err
+	}
+
+	if !strings.EqualFold(self, dst) {
+		if err := install(false); err != nil {
+			return err
+		}
 	}
 
 	token, err := config.LoadToken()
